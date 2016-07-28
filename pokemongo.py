@@ -1,10 +1,12 @@
-from data import pokemon_dict, moves_dict, types_dict
+from data import pokemon_dict, moves_dict, types_dict, stats_dict
 
 import random
 
 RED_COLOR = "#F62222"
 BLUE_COLOR = "#0055FF"
 STAB_RATIO = 1.25
+POKEMON_LIST = stats_dict.keys()
+DAMAGE_DAMPEN_MODIFIER = 50
 
 class OrderStrategy:
     def __init__(self):
@@ -23,6 +25,9 @@ def simulate_default_single_battle():
     blue = make_default_trainer("Blue", BLUE_COLOR);
     # Play
     battle(red, blue)
+
+def choose_random_pokemon_all():
+    return random.choice(POKEMON_LIST)
 
 def get_trainers_off_cooldown(trainers, cooldowns):
     return [t for t in trainers if t.name not in cooldowns]
@@ -183,14 +188,28 @@ def get_special_moves(pname):
     else:
         return []
 
+"""
+Returns attack, defense, and hp based on CP given.
+"""
+def get_stats_for_pokemon(name, cp):
+    stats = stat_dict[name]
+    base = float(stats['Attack'] + stats['Defense'] + stats['Stamina'])
+    attack = float(round(cp*stats['Attack']/base, 0))
+    defense = float(round(cp*stats['Defense']/base, 0))
+    hp = float(round(cp*stats['Stamina']/base, 0))
+    return attack, defense, hp
+
 class Pokemon:
-    def __init__(self, name="Pidgey", cp=100.0, hp=100.0):
+    def __init__(self, name=choose_random_pokemon_all(), cp=1000.0):
         self.name = name
         self.standard = get_standard_moves(self.name)
         self.special = get_special_moves(self.name)
         self.types = get_types_for_pokemon(self.name)
-        self.hp = hp
         self.cp = cp
+        hp, attack, defense = get_stats_for_pokemon(self.name, cp)
+        self.hp = hp
+        self.attack = attack
+        self.defense = defense
         self.special_meter = 0.0
 
     """
@@ -201,7 +220,7 @@ class Pokemon:
     """
     def take_damage(self, n, mtype):
         n = round(n, 1)
-        damage = n
+        damage = n/float(self.defense)
         ratio = 1.0
         for t in self.types:
             mtype_converted = mtype.lower()
@@ -217,14 +236,16 @@ class Pokemon:
 
     """
     Calculates damage given.
+    damage = (AttackStat * AttackPower / DefenseStat / 50) * STAB * Effectiveness
     """
     def do_damage(self, move):
         if not move:
             return 0.0
         m = moves_dict[move]
-        n = m['Power']
+        n = float(m['Power'])
         if m['Type'] in self.types:
             n *= STAB_RATIO
+        n *= (self.attack / DAMAGE_DAMPEN_MODIFIER)
         return n
 
     """
