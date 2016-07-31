@@ -1,7 +1,9 @@
 from data import pokemon_dict, moves_dict, types_dict, stats_dict
 
 import random
+import copy
 
+DISPLAY_ALL_MESSAGES = False
 RED_COLOR = "#F62222"
 BLUE_COLOR = "#0055FF"
 STAB_RATIO = 1.25
@@ -16,13 +18,16 @@ class MoveStrategy:
     def __init__(self):
         self.choose_next_move = make_default_move_strat()
 
-def run():
-    simulate_default_single_battle()
+def run(mirror=False):
+    simulate_default_single_battle(mirror)
 
-def simulate_default_single_battle():
+def simulate_default_single_battle(mirror):
     # Make Trainer
     red = make_default_trainer("Red", RED_COLOR);
+    red.party = make_default_party(cp = 2000.0)
     blue = make_default_trainer("Blue", BLUE_COLOR);
+    if mirror:
+        blue.party = copy.deepcopy(red.party)
     # Play
     battle(red, blue)
 
@@ -96,8 +101,8 @@ def finish_game(red, blue):
     if (red.get_alive_count() == 0 and blue.get_alive_count() == 0):
         red.tie_game()
         blue.tie_game()
-        message("Tie game! Well played by both players.")
-        message("Stats: \n" + get_battle_stats(red, blue))
+        message("Tie game! Well played by both players.", True)
+        message("Stats: \n" + get_battle_stats(red, blue), True)
         return
     elif (red.get_alive_count() > 0):
         winner = red
@@ -107,14 +112,14 @@ def finish_game(red, blue):
         loser = red
     winner.win_game()
     loser.lose_game()
-    message(winner.name + " has won the battle! \n" + loser.name + " has lost the battle.")
-    message("Stats: \n" + get_battle_stats(red, blue))
+    message(winner.name + " has won the battle! \n" + loser.name + " has lost the battle.", True)
+    message("Stats: \n" + get_battle_stats(red, blue), True)
 
 def get_battle_stats(red, blue):
     return_string = ""
     for trainer in [red, blue]:
         s = trainer.name + " stats:\n"
-        s += "*  Pokemon total: " + str(len(trainer.party)) + "\n"
+        s += "*  Pokemon party: " + trainer.get_party_string() + "\n"
         s += "*  Pokemon alive: " + str(trainer.get_alive_count()) + "\n"
         s += "*  Average health: " + str(trainer.get_average_hp()) + "\n"
         s += "*  Average CP: " + str(trainer.get_average_cp()) + "\n"
@@ -125,9 +130,10 @@ def get_battle_stats(red, blue):
         return_string += s
     return return_string
 
-def message(s):
-    print("-------------------------------------------")
-    print(s)
+def message(s, critical=False):
+    if(DISPLAY_ALL_MESSAGES or critical):
+        print("-------------------------------------------")
+        print(s)
 
 def make_default_order_strat():
     def choose_next_pokemon(me, opp):
@@ -143,18 +149,22 @@ def make_default_move_strat():
         active = me.get_active_pokemon()
         if active:
             moves = active.get_available_moves()
-            return random.choice(moves)
+            if moves:
+                return random.choice(moves)
+            else:
+                message("***** No moves for " + active.name, True)
         else:
+            message("***** Unexpected no active while finding moves!", True)
             return None
     return choose_next_move
 
 def make_default_trainer(name = "Ash", color=RED_COLOR):
     return Trainer(name=name, color=color)
 
-def make_default_party(size = 6):
+def make_default_party(size = 6, cp = 1000.0):
     party = []
     for _ in range(size):
-        pkmn = Pokemon()
+        pkmn = Pokemon(cp=cp)
         party.append(pkmn)
     return party
 
@@ -192,7 +202,7 @@ def get_special_moves(pname):
 Returns attack, defense, and hp based on CP given.
 """
 def get_stats_for_pokemon(name, cp):
-    stats = stat_dict[name]
+    stats = stats_dict[name]
     base = float(stats['Attack'] + stats['Defense'] + stats['Stamina'])
     attack = float(round(cp*stats['Attack']/base, 0))
     defense = float(round(cp*stats['Defense']/base, 0))
@@ -200,7 +210,9 @@ def get_stats_for_pokemon(name, cp):
     return attack, defense, hp
 
 class Pokemon:
-    def __init__(self, name=choose_random_pokemon_all(), cp=1000.0):
+    def __init__(self, name=None, cp=1000.0):
+        if not name:
+            name = choose_random_pokemon_all()
         self.name = name
         self.standard = get_standard_moves(self.name)
         self.special = get_special_moves(self.name)
@@ -217,26 +229,29 @@ class Pokemon:
     Arguments:
     n -- damage given
     type -- string of type that the move trying to damage you does
+    damage = ((AttackStat * AttackPower / DefenseStat / 50)+2) * STAB * Effectiveness
     """
     def take_damage(self, n, mtype):
         n = round(n, 1)
-        damage = n/float(self.defense)
+        damage = n/float(self.defense) + 2
         ratio = 1.0
         for t in self.types:
             mtype_converted = mtype.lower()
             t_converted = t.lower()
             ratio *= types_dict[mtype_converted][t_converted]
         damage = round(damage * ratio, 1)
-        print("*  incoming move has " + str(n) + " power.\n" + "*  Ratio is " + str(ratio)+"\n")
-        print("*  " + self.name + " taking " + str(damage) + " damage after calculations.")
+        output = ""
+        output += "*  incoming move has " + str(n) + " power.\n" + "*  Ratio is " + str(ratio)+"\n"
+        output += "*  " + self.name + " taking " + str(damage) + " damage after calculations."
         if self.hp > 0.0:
             self.hp = max(0.0, self.hp - damage)
         else:
-            print("*** You are trying to take damage when you're fainted!")
+            output += "*** You are trying to take damage when you're fainted!"
+        message(output)
 
     """
     Calculates damage given.
-    damage = (AttackStat * AttackPower / DefenseStat / 50) * STAB * Effectiveness
+    damage = ((AttackStat * AttackPower / DefenseStat / 50)+2) * STAB * Effectiveness
     """
     def do_damage(self, move):
         if not move:
@@ -307,6 +322,7 @@ class Pokemon:
     """
     def is_fainted(self):
         return self.hp <= 0.0
+
 
 class Trainer:
     # def __init__(self, name = "Ash", color = RED_COLOR):
@@ -389,6 +405,15 @@ class Trainer:
                 message(self.name + " could not send out a pokemon!")
             message(self.name + " has " + str(self.get_alive_count()) + " pokemon left.")
 
+    """
+    Gets string output of trainer's party, with names and CP
+    """
+    def get_party_string(self):
+        output = "["
+        for poke in self.party:
+            output += '(' + poke.name + ' , ' + str(poke.cp) + ')'
+        output += ']'
+        return output
 
 if __name__ == '__main__':
     run()
