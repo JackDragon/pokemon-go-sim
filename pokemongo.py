@@ -8,7 +8,8 @@ RED_COLOR = "#F62222"
 BLUE_COLOR = "#0055FF"
 STAB_RATIO = 1.25
 POKEMON_LIST = stats_dict.keys()
-DAMAGE_DAMPEN_MODIFIER = 50
+DAMAGE_DAMPEN_MODIFIER = 50.0
+DEFAULT_CP = 2000.0
 
 class OrderStrategy:
     def __init__(self):
@@ -19,17 +20,33 @@ class MoveStrategy:
         self.choose_next_move = make_default_move_strat()
 
 def run(mirror=False):
-    simulate_default_single_battle(mirror)
+    # simulate_default_single_battle(mirror)
+    simulate_100_battles(mirror)
 
 def simulate_default_single_battle(mirror):
     # Make Trainer
     red = make_default_trainer("Red", RED_COLOR);
-    red.party = make_default_party(cp = 2000.0)
+    red.party = make_default_party(cp = DEFAULT_CP)
     blue = make_default_trainer("Blue", BLUE_COLOR);
     if mirror:
         blue.party = copy.deepcopy(red.party)
+    else:
+        blue.party = make_default_party(cp = DEFAULT_CP)
     # Play
     battle(red, blue)
+
+def simulate_100_battles(mirror):
+    red = make_default_trainer("Red", RED_COLOR);
+    red.party = make_default_party(cp = DEFAULT_CP)
+    blue = make_default_trainer("Blue", BLUE_COLOR);
+    # Play
+    for _ in range(100):
+        red.party = make_default_party(cp = DEFAULT_CP)
+        if mirror:
+            blue.party = copy.deepcopy(red.party)
+        else:
+            blue.party = make_default_party(cp = DEFAULT_CP)
+        battle(red, blue)
 
 def choose_random_pokemon_all():
     return random.choice(POKEMON_LIST)
