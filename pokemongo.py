@@ -10,42 +10,44 @@ STAB_RATIO = 1.25
 POKEMON_LIST = stats_dict.keys()
 DAMAGE_DAMPEN_MODIFIER = 50.0
 DEFAULT_CP = 2000.0
+DEFAULT_SIZE = 10
 
 class OrderStrategy:
     def __init__(self):
-        self.choose_next_pokemon = make_default_order_strat()
+        self.choose_next_pokemon = default_choose_next_pokemon
 
 class MoveStrategy:
     def __init__(self):
-        self.choose_next_move = make_default_move_strat()
+        self.choose_next_move = default_choose_next_move
 
-def run(mirror=False):
+def run(mirror=False, size = DEFAULT_SIZE):
     # simulate_default_single_battle(mirror)
-    simulate_100_battles(mirror)
+    simulate_100_battles(mirror, size)
 
-def simulate_default_single_battle(mirror):
+def simulate_default_single_battle(mirror, size):
     # Make Trainer
     red = make_default_trainer("Red", RED_COLOR);
-    red.party = make_default_party(cp = DEFAULT_CP)
+    red.party = make_default_party(cp = DEFAULT_CP, size = size)
     blue = make_default_trainer("Blue", BLUE_COLOR);
     if mirror:
         blue.party = copy.deepcopy(red.party)
     else:
-        blue.party = make_default_party(cp = DEFAULT_CP)
+        blue.party = make_default_party(cp = DEFAULT_CP, size = size)
     # Play
     battle(red, blue)
 
-def simulate_100_battles(mirror):
+def simulate_100_battles(mirror, size):
     red = make_default_trainer("Red", RED_COLOR);
+    red.order_strategy.choose_next_pokemon = active_weakness_order_strat
     red.party = make_default_party(cp = DEFAULT_CP)
     blue = make_default_trainer("Blue", BLUE_COLOR);
     # Play
     for _ in range(100):
-        red.party = make_default_party(cp = DEFAULT_CP)
+        red.party = make_default_party(cp = DEFAULT_CP, size = size)
         if mirror:
             blue.party = copy.deepcopy(red.party)
         else:
-            blue.party = make_default_party(cp = DEFAULT_CP)
+            blue.party = make_default_party(cp = DEFAULT_CP, size = size)
         battle(red, blue)
 
 def choose_random_pokemon_all():
@@ -59,6 +61,14 @@ def get_type_of_attack(move):
 
 def get_duration_of_attack(move):
     return moves_dict[move]['Duration']
+
+def get_weak_to(type):
+    info = types_dict[type]
+    return [t for t in info.keys() if info[t] > 1.0]
+
+def get_resistant_to(type):
+    info = types_dict[type]
+    return [t for t in info.keys() if info[t] < 1.0]
 
 def update_cooldowns(cooldowns):
     if not cooldowns:
@@ -152,33 +162,72 @@ def message(s, critical=False):
         print("-------------------------------------------")
         print(s)
 
-def make_default_order_strat():
-    def choose_next_pokemon(me, opp):
-        alive = me.get_alive_pokemon()
-        if alive:
-            return random.choice(alive)
-        else:
-            return None
-    return choose_next_pokemon
+def default_choose_next_pokemon(me, opp):
+    alive = me.get_alive_pokemon()
+    if alive:
+        return random.choice(alive)
+    else:
+        return None
 
-def make_default_move_strat():
-    def choose_next_move(me, opp):
-        active = me.get_active_pokemon()
-        if active:
-            moves = active.get_available_moves()
-            if moves:
-                return random.choice(moves)
-            else:
-                message("***** No moves for " + active.name, True)
-        else:
-            message("***** Unexpected no active while finding moves!", True)
+def active_weakness_order_strat(me, opp):
+    if not opp.active_pokemon:
+        return default_choose_next_pokemon(me, opp)
+    else:
+        my_alive = me.get_alive_pokemon()
+        if not my_alive:
             return None
-    return choose_next_move
+        random.shuffle(my_alive)
+        opp_types = opp.active_pokemon.types
+        weak_count_dict = {}
+        for t in opp_types:
+            weaknesses = get_resistant_to(t)
+            for t in weaknesses:
+                if t in weak_count_dict:
+                    weak_count_dict[t] += 1
+                else:
+                    weak_count_dict[t] = 1
+        strong_count_dict = {}
+        for t in opp_types:
+            strengths = get_weak_to(t)
+            for t in strengths:
+                if t in strong_count_dict:
+                    strong_count_dict[t] += 1
+                else:
+                    strong_count_dict[t] = 1
+        # max_count = max(weak_count_dict.values())
+        # keys = weak_count_dict.keys()
+        # weakest_types = [t for t in keys if weak_count_dict[t] == max_count]
+        best_choice = None
+        best_score = None
+        for poke in my_alive:
+            score = 0.0
+            for my_type in poke.types:
+                if my_type in weak_count_dict:
+                    score += weak_count_dict[my_type]
+                if my_type in strong_count_dict:
+                    score -= strong_count_dict[my_type]
+            if not best_choice or best_score < score:
+                best_choice = poke
+                best_score = score
+        return best_choice
+
+
+def default_choose_next_move(me, opp):
+    active = me.get_active_pokemon()
+    if active:
+        moves = active.get_available_moves()
+        if moves:
+            return random.choice(moves)
+        else:
+            message("***** No moves for " + active.name, True)
+    else:
+        message("***** Unexpected no active while finding moves!", True)
+        return None
 
 def make_default_trainer(name = "Ash", color=RED_COLOR):
     return Trainer(name=name, color=color)
 
-def make_default_party(size = 6, cp = 1000.0):
+def make_default_party(cp = DEFAULT_CP, size = DEFAULT_SIZE):
     party = []
     for _ in range(size):
         pkmn = Pokemon(cp=cp)
@@ -253,9 +302,9 @@ class Pokemon:
         damage = n/float(self.defense) + 2
         ratio = 1.0
         for t in self.types:
-            mtype_converted = mtype.lower()
-            t_converted = t.lower()
-            ratio *= types_dict[mtype_converted][t_converted]
+            # mtype_converted = mtype.lower()
+            # t_converted = t.lower()
+            ratio *= types_dict[mtype][t]
         damage = round(damage * ratio, 1)
         output = ""
         output += "*  incoming move has " + str(n) + " power.\n" + "*  Ratio is " + str(ratio)+"\n"
