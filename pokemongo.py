@@ -81,15 +81,15 @@ def get_highest_dps(my_poke, opp_poke):
     best_dps = 0.0
     for mn_name in my_poke.standard:
         for ms_name in my_poke.special:
-            mn = my_poke.standard[mn_name]
-            ms = my_poke.special[ms_name]
+            mn = moves_dict[mn_name]
+            ms = moves_dict[ms_name]
             recharge_rate = ms['Energy Cost'] / mn['Energy Per Hit']
-            s_dps = (recharge_rate * mn.dps + ms.dps) / (recharge_rate + 1)
-            if s_dps > mn.dps and s_dps > best_dps:
+            s_dps = (recharge_rate * mn['DPS'] + ms['DPS']) / (recharge_rate + 1)
+            if s_dps > mn['DPS'] and s_dps > best_dps:
                 best_dps = s_dps
                 best_moves = [mn_name, ms_name]
-            elif mn.dps > best_dps:
-                best_dps = mn.dps
+            elif mn['DPS'] > best_dps:
+                best_dps = mn['DPS']
                 best_moves = [mn_name, '']
     return best_dps, best_moves
 
@@ -249,11 +249,11 @@ def default_choose_next_move(me, opp):
 
 def highest_dps_choose_next_move(me, opp):
     if me.active_pokemon and opp.active_pokemon:
-        dps, best_moves = get_highest_dps(me.active_pokemon)
+        dps, best_moves = get_highest_dps(me.active_pokemon, opp.active_pokemon)
         if not best_moves[1]:
-            return best_moves[1]
+            return best_moves[0]
         else:
-            best_special = me.active_pokemon.special[best_moves[1]]
+            best_special = moves_dict[best_moves[1]]
             if me.active_pokemon.special_meter > best_special['Energy Cost']:
                 # Can also use get_available_moves
                 return best_moves[1]
