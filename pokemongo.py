@@ -39,6 +39,7 @@ def simulate_default_single_battle(mirror, size):
 def simulate_100_battles(mirror, size):
     red = make_default_trainer("Red", RED_COLOR);
     red.order_strategy.choose_next_pokemon = active_weakness_order_strat
+    red.move_strategy.choose_next_move = highest_dps_choose_next_move
     red.party = make_default_party(cp = DEFAULT_CP)
     blue = make_default_trainer("Blue", BLUE_COLOR);
     # Play
@@ -69,6 +70,28 @@ def get_weak_to(type):
 def get_resistant_to(type):
     info = types_dict[type]
     return [t for t in info.keys() if info[t] < 1.0]
+
+"""
+Takes in two active pokemon (one yours, one opponent's)
+and gives back your max dps and the moves that you should use
+against your opponent's pokemon.
+"""
+def get_highest_dps(my_poke, opp_poke):
+    best_moves = ['','']
+    best_dps = 0.0
+    for mn_name in my_poke.standard:
+        for ms_name in my_poke.special:
+            mn = my_poke.standard[mn_name]
+            ms = my_poke.special[ms_name]
+            recharge_rate = ms['Energy Cost'] / mn['Energy Per Hit']
+            s_dps = (recharge_rate * mn.dps + ms.dps) / (recharge_rate + 1)
+            if s_dps > mn.dps and s_dps > best_dps:
+                best_dps = s_dps
+                best_moves = [mn_name, ms_name]
+            elif mn.dps > best_dps:
+                best_dps = mn.dps
+                best_moves = [mn_name, '']
+    return best_dps, best_moves
 
 def update_cooldowns(cooldowns):
     if not cooldowns:
@@ -222,6 +245,21 @@ def default_choose_next_move(me, opp):
             message("***** No moves for " + active.name, True)
     else:
         message("***** Unexpected no active while finding moves!", True)
+        return None
+
+def highest_dps_choose_next_move(me, opp):
+    if me.active_pokemon and opp.active_pokemon:
+        dps, best_moves = get_highest_dps(me.active_pokemon)
+        if not best_moves[1]:
+            return best_moves[1]
+        else:
+            best_special = me.active_pokemon.special[best_moves[1]]
+            if me.active_pokemon.special_meter > best_special['Energy Cost']:
+                # Can also use get_available_moves
+                return best_moves[1]
+            else:
+                return best_moves[0]
+    else:
         return None
 
 def make_default_trainer(name = "Ash", color=RED_COLOR):
