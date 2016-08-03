@@ -1,0 +1,8 @@
+# Compiled #
+*.pyc
+
+# Directories #
+.ipynb_checkpoints/
+
+# Locks #
+.~lock.*
