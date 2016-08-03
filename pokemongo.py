@@ -20,7 +20,7 @@ class MoveStrategy:
     def __init__(self):
         self.choose_next_move = default_choose_next_move
 
-def run(mirror=False, size = DEFAULT_SIZE):
+def run(mirror=True, size = DEFAULT_SIZE):
     # simulate_default_single_battle(mirror)
     simulate_100_battles(mirror, size)
 
@@ -71,27 +71,41 @@ def get_resistant_to(type):
     info = types_dict[type]
     return [t for t in info.keys() if info[t] < 1.0]
 
+
 """
 Takes in two active pokemon (one yours, one opponent's)
 and gives back your max dps and the moves that you should use
 against your opponent's pokemon.
 """
-def get_highest_dps(my_poke, opp_poke):
+def get_highest_dps_converted(my_poke, opp_poke):
     best_moves = ['','']
     best_dps = 0.0
-    for mn_name in my_poke.standard:
-        for ms_name in my_poke.special:
-            mn = moves_dict[mn_name]
-            ms = moves_dict[ms_name]
-            recharge_rate = ms['Energy Cost'] / mn['Energy Per Hit']
-            s_dps = (recharge_rate * mn['DPS'] + ms['DPS']) / (recharge_rate + 1)
-            if s_dps > mn['DPS'] and s_dps > best_dps:
-                best_dps = s_dps
-                best_moves = [mn_name, ms_name]
-            elif mn['DPS'] > best_dps:
-                best_dps = mn['DPS']
-                best_moves = [mn_name, '']
-    return best_dps, best_moves
+    if not my_poke.special:
+        # Only mew
+        mn_name = my_poke.standard[0]
+        mn = moves_dict[mn_name]
+        n_dps = my_poke.get_converted_number(mn['DPS'], mn['Type'], opp_poke)
+        return n_dps, [mn_name, '']
+    try:
+        for mn_name in my_poke.standard:
+            for ms_name in my_poke.special:
+                mn = moves_dict[mn_name]
+                ms = moves_dict[ms_name]
+                n_dps = my_poke.get_converted_number(mn['DPS'], mn['Type'], opp_poke)
+                s_dps = my_poke.get_converted_number(ms['DPS'], ms['Type'], opp_poke)
+                recharge_rate = ms['Energy Cost'] / mn['Energy Per Hit']
+                s_dps = (recharge_rate * n_dps + s_dps) / (recharge_rate + 1)
+                if s_dps > n_dps and s_dps > best_dps:
+                    best_dps = s_dps
+                    best_moves = [mn_name, ms_name]
+                elif n_dps > best_dps:
+                    best_dps = n_dps
+                    best_moves = [mn_name, '']
+        return best_dps, best_moves
+    except Exception as e:
+        message("** DEBUG: " + str(my_poke.standard))
+        message("** DEBUG: " + str(my_poke.special))
+        raise e
 
 def update_cooldowns(cooldowns):
     if not cooldowns:
@@ -129,6 +143,9 @@ def battle(red, blue):
         for trainer in active_trainers:
             if trainer.active_pokemon and not trainer.active_pokemon.is_fainted():
                 next_move = trainer.choose_next_move(trainer.opponent)
+                if not next_move:
+                    message("* No next move for " + trainer.active_pokemon.name, True)
+                    # continue
                 damage = trainer.get_active_pokemon().do_damage(next_move)
                 trainer.get_active_pokemon().change_special_meter(next_move)
                 trainer.opponent.get_active_pokemon().take_damage(damage, get_type_of_attack(next_move))
@@ -249,7 +266,7 @@ def default_choose_next_move(me, opp):
 
 def highest_dps_choose_next_move(me, opp):
     if me.active_pokemon and opp.active_pokemon:
-        dps, best_moves = get_highest_dps(me.active_pokemon, opp.active_pokemon)
+        dps, best_moves = get_highest_dps_converted(me.active_pokemon, opp.active_pokemon)
         if not best_moves[1]:
             return best_moves[0]
         else:
@@ -277,7 +294,7 @@ Returns a list of the types for the pokemon.
 """
 def get_types_for_pokemon(pname):
     if pname in pokemon_dict:
-        t = pokemon_dict[pname]["Types"]
+        t = list(pokemon_dict[pname]["Types"])
         return [x for x in t if x]
     else:
         return []
@@ -327,6 +344,22 @@ class Pokemon:
         self.attack = attack
         self.defense = defense
         self.special_meter = 0.0
+
+    """
+    Gets converted number (dps or damage) from your poke to their poke.
+    n -- dps or damage
+    mtype -- move type
+    opp_poke -- opponent pokemon
+    """
+    def get_converted_number(self, n, mtype, opp_poke):
+        ratio = 1.0
+        for t in opp_poke.types:
+            # mtype_converted = mtype.lower()
+            # t_converted = t.lower()
+            ratio *= types_dict[mtype][t]
+        if mtype in self.types:
+            ratio *= STAB_RATIO
+        return ratio * n
 
     """
     Subtracts hp off this pokemon.
