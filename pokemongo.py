@@ -7,6 +7,7 @@ DISPLAY_ALL_MESSAGES = False
 RED_COLOR = "#F62222"
 BLUE_COLOR = "#0055FF"
 STAB_RATIO = 1.25
+CRIT_RATIO = 2.0
 POKEMON_LIST = stats_dict.keys()
 DAMAGE_DAMPEN_MODIFIER = 50.0
 DEFAULT_CP = 2000.0
@@ -71,6 +72,16 @@ def get_resistant_to(type):
     info = types_dict[type]
     return [t for t in info.keys() if info[t] < 1.0]
 
+def simulate_crit(move):
+    prob = moves_dict[move]['Crit']
+    return random.random() < prob
+
+def convert_for_crit(n, move):
+    prob = moves_dict[move]['Crit']
+    if prob >= 1.0:
+        return 2.0*n
+    return ((1.0-prob)+2.0*(prob)) * n
+
 
 """
 Takes in two active pokemon (one yours, one opponent's)
@@ -85,6 +96,7 @@ def get_highest_dps_converted(my_poke, opp_poke):
         mn_name = my_poke.standard[0]
         mn = moves_dict[mn_name]
         n_dps = my_poke.get_converted_number(mn['DPS'], mn['Type'], opp_poke)
+        n_dps = convert_for_crit(n_dps, mn_name)
         return n_dps, [mn_name, '']
     try:
         for mn_name in my_poke.standard:
@@ -92,7 +104,9 @@ def get_highest_dps_converted(my_poke, opp_poke):
                 mn = moves_dict[mn_name]
                 ms = moves_dict[ms_name]
                 n_dps = my_poke.get_converted_number(mn['DPS'], mn['Type'], opp_poke)
+                n_dps = convert_for_crit(n_dps, mn_name)
                 s_dps = my_poke.get_converted_number(ms['DPS'], ms['Type'], opp_poke)
+                s_dps = convert_for_crit(s_dps, ms_name)
                 recharge_rate = ms['Energy Cost'] / mn['Energy Per Hit']
                 s_dps = (recharge_rate * n_dps + s_dps) / (recharge_rate + 1)
                 if s_dps > n_dps and s_dps > best_dps:
@@ -397,6 +411,8 @@ class Pokemon:
         n = float(m['Power'])
         if m['Type'] in self.types:
             n *= STAB_RATIO
+        if simulate_crit(move):
+            n *= CRIT_RATIO
         n *= (self.attack / DAMAGE_DAMPEN_MODIFIER)
         return n
 
