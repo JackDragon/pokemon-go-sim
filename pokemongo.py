@@ -3,6 +3,7 @@ from data import pokemon_dict, moves_dict, types_dict, stats_dict
 import random
 import copy
 
+### Variables ###############################################
 DISPLAY_ALL_MESSAGES = False
 RED_COLOR = "#F62222"
 BLUE_COLOR = "#0055FF"
@@ -12,15 +13,10 @@ POKEMON_LIST = stats_dict.keys()
 DAMAGE_DAMPEN_MODIFIER = 50.0
 DEFAULT_CP = 2000.0
 DEFAULT_SIZE = 10
+BEST_PARTY = ['Vaporeon', 'Vaporeon', 'Vaporeon', 'Vaporeon', 'Vaporeon', 
+            'Vaporeon', 'Vaporeon', 'Vaporeon', 'Vaporeon', 'Vaporeon']
 
-class OrderStrategy:
-    def __init__(self):
-        self.choose_next_pokemon = default_choose_next_pokemon
-
-class MoveStrategy:
-    def __init__(self):
-        self.choose_next_move = default_choose_next_move
-
+### Game Functions ###############################################
 def run(mirror=False, size = DEFAULT_SIZE):
     # simulate_default_single_battle(mirror)
     simulate_100_battles(mirror, size)
@@ -41,16 +37,116 @@ def simulate_100_battles(mirror, size):
     red = make_default_trainer("Red", RED_COLOR);
     red.order_strategy.choose_next_pokemon = active_weakness_order_strat
     red.move_strategy.choose_next_move = highest_dps_choose_next_move
-    red.party = make_default_party(cp = DEFAULT_CP)
+    # red.party = make_default_party(cp = DEFAULT_CP)
     blue = make_default_trainer("Blue", BLUE_COLOR);
+    # blue.order_strategy.choose_next_pokemon = active_weakness_order_strat
+    # blue.move_strategy.choose_next_move = highest_dps_choose_next_move
     # Play
     for _ in range(100):
-        red.party = make_default_party(cp = DEFAULT_CP, size = size)
+        # red.party = make_default_party(cp = DEFAULT_CP, size = size)
+        red.party = make_party_from_list(cp = DEFAULT_CP, party = BEST_PARTY)
         if mirror:
             blue.party = copy.deepcopy(red.party)
         else:
             blue.party = make_default_party(cp = DEFAULT_CP, size = size)
         battle(red, blue)
+
+def update_cooldowns(cooldowns):
+    if not cooldowns:
+        return
+    min_cd = min(cooldowns.values())
+    to_remove = []
+    for k, v in cooldowns.iteritems():
+        if v == min_cd:
+            to_remove.append(k)
+        else:
+            cooldowns[k] = round(v-min_cd, 1)
+    for k in to_remove:
+        cooldowns.pop(k, None)
+
+
+def battle(red, blue):
+    red.set_opponent(blue)
+    blue.set_opponent(red)
+    red_first_pokemon = red.choose_next_pokemon(blue)
+    blue_first_pokemon = blue.choose_next_pokemon(red)
+    red.choose_active_pokemon(red_first_pokemon)
+    blue.choose_active_pokemon(blue_first_pokemon)
+    
+    cooldowns = {}
+    # random.shuffle(idle_list)
+    # active = idle_list.pop(0)
+    while(not game_over(red, blue)):
+        update_cooldowns(cooldowns)
+        if cooldowns:
+            for k, v in cooldowns.iteritems():
+                message(k + " is still on cooldown for " + str(v) + " ms before able to attack.")
+        draw_state(red, blue)
+        active_trainers = get_trainers_off_cooldown([red, blue], cooldowns)
+        # random.shuffle(active_trainers)
+        for trainer in active_trainers:
+            if trainer.active_pokemon and not trainer.active_pokemon.is_fainted():
+                next_move = trainer.choose_next_move(trainer.opponent)
+                if not next_move:
+                    message("* No next move for " + trainer.active_pokemon.name, True)
+                    # continue
+                damage = trainer.active_pokemon.do_damage(next_move)
+                trainer.active_pokemon.change_special_meter(next_move)
+                trainer.opponent.active_pokemon.take_damage(damage, get_type_of_attack(next_move))
+                cooldowns[trainer.name] = get_duration_of_attack(next_move)
+        for trainer in [red, blue]:
+            trainer.update()
+
+    finish_game(red, blue)
+
+def draw_state(red, blue):
+    return
+
+# def take_turn(trainer, opponent):
+#     if trainer.active_pokemon:
+
+def game_over(red, blue):
+    return (red.get_alive_count() == 0 or blue.get_alive_count() == 0)
+
+def finish_game(red, blue):
+    if (red.get_alive_count() == 0 and blue.get_alive_count() == 0):
+        red.tie_game()
+        blue.tie_game()
+        message("Tie game! Well played by both players.", True)
+        message("Stats: \n" + get_battle_stats(red, blue), True)
+        return
+    elif (red.get_alive_count() > 0):
+        winner = red
+        loser = blue
+    else:
+        winner = blue
+        loser = red
+    winner.win_game()
+    loser.lose_game()
+    message(winner.name + " has won the battle! \n" + loser.name + " has lost the battle.", True)
+    message("Stats: \n" + get_battle_stats(red, blue), True)
+
+def get_battle_stats(red, blue):
+    return_string = ""
+    for trainer in [red, blue]:
+        s = trainer.name + " stats:\n"
+        s += "*  Pokemon party: " + trainer.get_party_string() + "\n"
+        s += "*  Pokemon alive: " + str(trainer.get_alive_count()) + "\n"
+        s += "*  Average health: " + str(trainer.get_average_hp()) + "\n"
+        s += "*  Average CP: " + str(trainer.get_average_cp()) + "\n"
+        s += "*  Trainer W/L now: " + str(trainer.wlt[0]) + " wins"
+        s += " / " + str(trainer.wlt[1]) + " losses"
+        s += " / " + str(trainer.wlt[2]) + " ties\n"
+        s += "-------------------------------------------\n"
+        return_string += s
+    return return_string
+
+def message(s, critical=False):
+    if(DISPLAY_ALL_MESSAGES or critical):
+        print("-------------------------------------------")
+        print(s)
+
+### Utility Functions ###############################################
 
 def choose_random_pokemon_all():
     return random.choice(POKEMON_LIST)
@@ -121,100 +217,6 @@ def get_highest_dps_converted(my_poke, opp_poke):
         message("** DEBUG: " + str(my_poke.special))
         raise e
 
-def update_cooldowns(cooldowns):
-    if not cooldowns:
-        return
-    min_cd = min(cooldowns.values())
-    to_remove = []
-    for k, v in cooldowns.iteritems():
-        if v == min_cd:
-            to_remove.append(k)
-        else:
-            cooldowns[k] = round(v-min_cd, 1)
-    for k in to_remove:
-        cooldowns.pop(k, None)
-
-
-def battle(red, blue):
-    red.set_opponent(blue)
-    blue.set_opponent(red)
-    red_first_pokemon = red.choose_next_pokemon(blue)
-    blue_first_pokemon = blue.choose_next_pokemon(red)
-    red.choose_active_pokemon(red_first_pokemon)
-    blue.choose_active_pokemon(blue_first_pokemon)
-    
-    cooldowns = {}
-    # random.shuffle(idle_list)
-    # active = idle_list.pop(0)
-    while(not game_over(red, blue)):
-        update_cooldowns(cooldowns)
-        if cooldowns:
-            for k, v in cooldowns.iteritems():
-                message(k + " is still on cooldown for " + str(v) + " ms before able to attack.")
-        draw_state(red, blue)
-        active_trainers = get_trainers_off_cooldown([red, blue], cooldowns)
-        # random.shuffle(active_trainers)
-        for trainer in active_trainers:
-            if trainer.active_pokemon and not trainer.active_pokemon.is_fainted():
-                next_move = trainer.choose_next_move(trainer.opponent)
-                if not next_move:
-                    message("* No next move for " + trainer.active_pokemon.name, True)
-                    # continue
-                damage = trainer.get_active_pokemon().do_damage(next_move)
-                trainer.get_active_pokemon().change_special_meter(next_move)
-                trainer.opponent.get_active_pokemon().take_damage(damage, get_type_of_attack(next_move))
-                cooldowns[trainer.name] = get_duration_of_attack(next_move)
-        for trainer in [red, blue]:
-            trainer.update()
-
-    finish_game(red, blue)
-
-def draw_state(red, blue):
-    return
-
-# def take_turn(trainer, opponent):
-#     if trainer.get_active_pokemon():
-
-def game_over(red, blue):
-    return (red.get_alive_count() == 0 or blue.get_alive_count() == 0)
-
-def finish_game(red, blue):
-    if (red.get_alive_count() == 0 and blue.get_alive_count() == 0):
-        red.tie_game()
-        blue.tie_game()
-        message("Tie game! Well played by both players.", True)
-        message("Stats: \n" + get_battle_stats(red, blue), True)
-        return
-    elif (red.get_alive_count() > 0):
-        winner = red
-        loser = blue
-    else:
-        winner = blue
-        loser = red
-    winner.win_game()
-    loser.lose_game()
-    message(winner.name + " has won the battle! \n" + loser.name + " has lost the battle.", True)
-    message("Stats: \n" + get_battle_stats(red, blue), True)
-
-def get_battle_stats(red, blue):
-    return_string = ""
-    for trainer in [red, blue]:
-        s = trainer.name + " stats:\n"
-        s += "*  Pokemon party: " + trainer.get_party_string() + "\n"
-        s += "*  Pokemon alive: " + str(trainer.get_alive_count()) + "\n"
-        s += "*  Average health: " + str(trainer.get_average_hp()) + "\n"
-        s += "*  Average CP: " + str(trainer.get_average_cp()) + "\n"
-        s += "*  Trainer W/L now: " + str(trainer.wlt[0]) + " wins"
-        s += " / " + str(trainer.wlt[1]) + " losses"
-        s += " / " + str(trainer.wlt[2]) + " ties\n"
-        s += "-------------------------------------------\n"
-        return_string += s
-    return return_string
-
-def message(s, critical=False):
-    if(DISPLAY_ALL_MESSAGES or critical):
-        print("-------------------------------------------")
-        print(s)
 
 def default_choose_next_pokemon(me, opp):
     alive = me.get_alive_pokemon()
@@ -267,7 +269,7 @@ def active_weakness_order_strat(me, opp):
 
 
 def default_choose_next_move(me, opp):
-    active = me.get_active_pokemon()
+    active = me.active_pokemon
     if active:
         moves = active.get_available_moves()
         if moves:
@@ -304,11 +306,11 @@ def make_default_party(cp = DEFAULT_CP, size = DEFAULT_SIZE):
     return party
 
 def make_party_from_list(cp = DEFAULT_CP, party = ["Pidgey"]):
-    party = []
+    my_party = []
     for s in party:
         pkmn = Pokemon(name=s, cp=cp)
-        party.append(pkmn)
-    return party
+        my_party.append(pkmn)
+    return my_party
 
 """
 Returns a list of the types for the pokemon.
@@ -351,6 +353,8 @@ def get_stats_for_pokemon(name, cp):
     hp = float(round(cp*stats['Stamina']/base, 0))
     return attack, defense, hp
 
+### Clases ###############################################
+#
 class Pokemon:
     def __init__(self, name=None, cp=1000.0):
         if not name:
@@ -483,6 +487,13 @@ class Pokemon:
     def is_fainted(self):
         return self.hp <= 0.0
 
+class OrderStrategy:
+    def __init__(self):
+        self.choose_next_pokemon = default_choose_next_pokemon
+
+class MoveStrategy:
+    def __init__(self):
+        self.choose_next_move = default_choose_next_move
 
 class Trainer:
     # def __init__(self, name = "Ash", color = RED_COLOR):
@@ -509,8 +520,8 @@ class Trainer:
     def set_opponent(self, opp):
         self.opponent = opp
 
-    def get_active_pokemon(self):
-        return self.active_pokemon
+    # def get_active_pokemon(self):
+    #     return self.active_pokemon
 
     def get_alive_pokemon(self):
         return [poke for poke in self.party if not poke.is_fainted()]
