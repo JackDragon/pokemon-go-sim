@@ -5,6 +5,7 @@ import copy
 
 ### Variables ###############################################
 DISPLAY_ALL_MESSAGES = False
+# DISPLAY_ALL_MESSAGES = True
 RED_COLOR = "#F62222"
 BLUE_COLOR = "#0055FF"
 STAB_RATIO = 1.25
@@ -13,13 +14,18 @@ POKEMON_LIST = stats_dict.keys()
 DAMAGE_DAMPEN_MODIFIER = 50.0
 DEFAULT_CP = 2000.0
 DEFAULT_SIZE = 10
+DEFAULT_NUM_BATTLES = 100
 BEST_PARTY = ['Vaporeon', 'Vaporeon', 'Vaporeon', 'Vaporeon', 'Vaporeon', 
             'Vaporeon', 'Vaporeon', 'Vaporeon', 'Vaporeon', 'Vaporeon']
+BALANCED_PARTY = ['Pidgeot', 'Venusaur', 'Charizard', 'Blastoise', 'Alakazam', 
+            'Gengar', 'Magneton', 'Jolteon', 'Nidoking', 'Seel']
 
 ### Game Functions ###############################################
-def run(mirror=False, size = DEFAULT_SIZE):
-    # simulate_default_single_battle(mirror)
-    simulate_100_battles(mirror, size)
+def run(mirror=False, size = DEFAULT_SIZE, num = DEFAULT_NUM_BATTLES):
+    # simulate_default_single_battle(mirror, size)
+    mirror = True
+    # num = 10
+    simulate_battles(mirror, size, num)
 
 def simulate_default_single_battle(mirror, size):
     # Make Trainer
@@ -33,18 +39,17 @@ def simulate_default_single_battle(mirror, size):
     # Play
     battle(red, blue)
 
-def simulate_100_battles(mirror, size):
+def simulate_battles(mirror, size, num):
     red = make_default_trainer("Red", RED_COLOR);
+    blue = make_default_trainer("Blue", BLUE_COLOR);
     red.order_strategy.choose_next_pokemon = active_weakness_order_strat
     red.move_strategy.choose_next_move = highest_dps_choose_next_move
-    # red.party = make_default_party(cp = DEFAULT_CP)
-    blue = make_default_trainer("Blue", BLUE_COLOR);
     # blue.order_strategy.choose_next_pokemon = active_weakness_order_strat
     # blue.move_strategy.choose_next_move = highest_dps_choose_next_move
     # Play
-    for _ in range(100):
+    for _ in range(num):
         # red.party = make_default_party(cp = DEFAULT_CP, size = size)
-        red.party = make_party_from_list(cp = DEFAULT_CP, party = BEST_PARTY)
+        red.party = make_party_from_list(cp = DEFAULT_CP, party = BALANCED_PARTY)
         if mirror:
             blue.party = copy.deepcopy(red.party)
         else:
@@ -66,6 +71,8 @@ def update_cooldowns(cooldowns):
 
 
 def battle(red, blue):
+    red.reset_before_battle()
+    blue.reset_before_battle()
     red.set_opponent(blue)
     blue.set_opponent(red)
     red_first_pokemon = red.choose_next_pokemon(blue)
@@ -99,15 +106,15 @@ def battle(red, blue):
 
     finish_game(red, blue)
 
+# Draws the game state. Not implemented
 def draw_state(red, blue):
     return
 
-# def take_turn(trainer, opponent):
-#     if trainer.active_pokemon:
-
+# Checks to see if game is over. Either players have no alive pokes.
 def game_over(red, blue):
     return (red.get_alive_count() == 0 or blue.get_alive_count() == 0)
 
+# Handles results, prints stats.
 def finish_game(red, blue):
     if (red.get_alive_count() == 0 and blue.get_alive_count() == 0):
         red.tie_game()
@@ -126,6 +133,7 @@ def finish_game(red, blue):
     message(winner.name + " has won the battle! \n" + loser.name + " has lost the battle.", True)
     message("Stats: \n" + get_battle_stats(red, blue), True)
 
+# Returns the stats for both players in string format.
 def get_battle_stats(red, blue):
     return_string = ""
     for trainer in [red, blue]:
@@ -141,6 +149,13 @@ def get_battle_stats(red, blue):
         return_string += s
     return return_string
 
+"""
+This is the message function that serves as the print
+or print to file function if implemented.
+s -- The string to print or print to file.
+critical -- If True, will still be printed even if
+            DISPLAY_ALL_MESSAGES = False.
+"""
 def message(s, critical=False):
     if(DISPLAY_ALL_MESSAGES or critical):
         print("-------------------------------------------")
@@ -148,26 +163,33 @@ def message(s, critical=False):
 
 ### Utility Functions ###############################################
 
+# Chooses a random pokemon out of all the available PoGo pokemon.
 def choose_random_pokemon_all():
     return random.choice(POKEMON_LIST)
 
+# Gets a list of trainers that can attack at this moment.
 def get_trainers_off_cooldown(trainers, cooldowns):
     return [t for t in trainers if t.name not in cooldowns]
 
+# Returns type of a move.
 def get_type_of_attack(move):
     return moves_dict[move]['Type']
 
+# Returns duration of move in (ms)
 def get_duration_of_attack(move):
     return moves_dict[move]['Duration']
 
+# Returns list of types that a type is weak to
 def get_weak_to(type):
     info = types_dict[type]
     return [t for t in info.keys() if info[t] > 1.0]
 
+# Returns list of types that a type is strong against
 def get_resistant_to(type):
     info = types_dict[type]
     return [t for t in info.keys() if info[t] < 1.0]
 
+# Returns 
 def simulate_crit(move):
     prob = moves_dict[move]['Crit']
     return random.random() < prob
@@ -454,9 +476,9 @@ class Pokemon:
         if move in moves_dict:
             m = moves_dict[move]
             if m["Energy Cost"]:
-                n += m["Energy Cost"]
+                n -= m["Energy Cost"]
             if m["Energy Per Hit"]:
-                n -= m["Energy Per Hit"]
+                n += m["Energy Per Hit"]
         return n
 
     """
@@ -479,6 +501,7 @@ class Pokemon:
     def get_available_moves(self):
         available = [move for move in self.special if self.calc_enough_special(move)]
         available += self.standard
+        message("*****" + str(available))
         return available
 
     """
@@ -506,10 +529,18 @@ class Trainer:
     #     self.color = color
     #     self.opponent = None
 
-    def __init__(self, order_strategy = OrderStrategy(), move_strategy = MoveStrategy(), \
+    def __init__(self, order_strategy = None, move_strategy = None, \
                 party = make_default_party(), name = "Ash", color = RED_COLOR):
-        self.order_strategy = order_strategy
-        self.move_strategy = move_strategy
+        if not order_strategy:
+            strat = OrderStrategy()
+            self.order_strategy = strat
+        else:
+            self.order_strategy = order_strategy
+        if not move_strategy:
+            strat = MoveStrategy()
+            self.move_strategy = strat
+        else:
+            self.move_strategy = move_strategy
         self.party = party
         self.active_pokemon = None
         self.wlt = [0, 0, 0]
@@ -520,8 +551,8 @@ class Trainer:
     def set_opponent(self, opp):
         self.opponent = opp
 
-    # def get_active_pokemon(self):
-    #     return self.active_pokemon
+    def reset_before_battle(self):
+        self.active_pokemon = None
 
     def get_alive_pokemon(self):
         return [poke for poke in self.party if not poke.is_fainted()]
