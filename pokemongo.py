@@ -21,7 +21,7 @@ class MoveStrategy:
     def __init__(self):
         self.choose_next_move = default_choose_next_move
 
-def run(mirror=True, size = DEFAULT_SIZE):
+def run(mirror=False, size = DEFAULT_SIZE):
     # simulate_default_single_battle(mirror)
     simulate_100_battles(mirror, size)
 
@@ -300,6 +300,13 @@ def make_default_party(cp = DEFAULT_CP, size = DEFAULT_SIZE):
     party = []
     for _ in range(size):
         pkmn = Pokemon(cp=cp)
+        party.append(pkmn)
+    return party
+
+def make_party_from_list(cp = DEFAULT_CP, party = ["Pidgey"]):
+    party = []
+    for s in party:
+        pkmn = Pokemon(name=s, cp=cp)
         party.append(pkmn)
     return party
 
